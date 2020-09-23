@@ -71,6 +71,15 @@ var (
 	ipv4Proto = map[string]string{"icmp": "ip4:icmp", "udp": "udp4"}
 	ipv6Proto = map[string]string{"icmp": "ip6:ipv6-icmp", "udp": "udp6"}
 )
+var idCounter uint16
+var muCounter sync.Mutex
+
+func nextID() uint16 {
+	muCounter.Lock()
+	defer muCounter.Unlock()
+	idCounter++
+	return idCounter
+}
 
 // New returns a new Pinger struct pointer.
 func New(addr string) *Pinger {
@@ -84,7 +93,7 @@ func New(addr string) *Pinger {
 
 		addr:     addr,
 		done:     make(chan bool),
-		id:       r.Intn(math.MaxInt16),
+		id:       int(nextID()),
 		ipaddr:   nil,
 		ipv4:     false,
 		network:  "ip",
@@ -376,6 +385,7 @@ func (p *Pinger) Run() error {
 	}
 }
 
+// Stop terminates the pinger
 func (p *Pinger) Stop() {
 	close(p.done)
 }
@@ -471,7 +481,11 @@ func (p *Pinger) recvICMP(
 				}
 			}
 
-			recv <- &packet{bytes: bytes, nbytes: n, ttl: ttl}
+			select {
+			case <-p.done:
+				return nil
+			case recv <- &packet{bytes: bytes, nbytes: n, ttl: ttl}:
+			}
 		}
 	}
 }
